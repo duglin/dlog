@@ -7,6 +7,7 @@ import (
 
 type DLogger struct {
 	verbose int
+	indent  string
 	log     *log.Logger
 }
 
@@ -15,6 +16,7 @@ var std = &DLogger{
 	log:     log.Default(),
 }
 
+func (log *DLogger) GetVerbose() int  { return log.verbose }
 func (log *DLogger) SetVerbose(v int) { log.verbose = v }
 
 func (l *DLogger) VPrint(v int, a ...any) {
@@ -24,6 +26,24 @@ func (l *DLogger) VPrint(v int, a ...any) {
 }
 
 func (l *DLogger) VPrintf(v int, f string, a ...any) {
+	saveIndent := l.indent
+
+	if len(f) > 0 && f[0] == '>' {
+		l.indent = "| " + l.indent
+		f = f[1:]
+		if f == "" {
+			return
+		}
+	} else if len(f) > 0 && f[0] == '<' && len(l.indent) > 1 {
+		l.indent = l.indent[2:]
+		saveIndent = l.indent
+		f = f[1:]
+		if f == "" {
+			return
+		}
+	}
+	f = saveIndent + f
+
 	if v <= l.verbose {
 		l.log.Printf(f, a...)
 	}
@@ -53,6 +73,7 @@ func (l *DLogger) SetPrefix(prefix string)        { l.log.SetPrefix(prefix) }
 func (l *DLogger) Writer() io.Writer              { return l.log.Writer() }
 
 // Default logger stuff
+func GetVerbose() int                   { return std.GetVerbose() }
 func SetVerbose(v int)                  { std.SetVerbose(v) }
 func VPrint(v int, a ...any)            { std.VPrint(v, a...) }
 func VPrintf(v int, f string, a ...any) { std.VPrintf(v, f, a...) }
