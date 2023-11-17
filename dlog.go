@@ -26,6 +26,10 @@ func (l *DLogger) VPrint(v int, a ...any) {
 }
 
 func (l *DLogger) VPrintf(v int, f string, a ...any) {
+	if v > l.verbose {
+		return
+	}
+
 	saveIndent := l.indent
 
 	if len(f) > 0 && f[0] == '>' {
@@ -44,9 +48,7 @@ func (l *DLogger) VPrintf(v int, f string, a ...any) {
 	}
 	f = saveIndent + f
 
-	if v <= l.verbose {
-		l.log.Printf(f, a...)
-	}
+	l.log.Printf(f, a...)
 }
 
 func (l *DLogger) VPrintln(v int, a ...any) {
