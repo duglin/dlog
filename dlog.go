@@ -3,9 +3,11 @@ package dlog
 import (
 	"io"
 	"log"
+	"sync"
 )
 
 type DLogger struct {
+	sync.Mutex
 	verbose int
 	indent  string
 	log     *log.Logger
@@ -30,17 +32,24 @@ func (l *DLogger) VPrintf(v int, f string, a ...any) {
 		return
 	}
 
+	l.Lock()
+	iLen := len(l.indent)
 	saveIndent := l.indent
+	l.Unlock()
 
 	if len(f) > 0 && f[0] == '>' {
+		l.Lock()
 		l.indent = "| " + l.indent
+		l.Unlock()
 		f = f[1:]
 		if f == "" {
 			return
 		}
-	} else if len(f) > 0 && f[0] == '<' && len(l.indent) > 1 {
+	} else if len(f) > 0 && f[0] == '<' && iLen > 1 {
+		l.Lock()
 		l.indent = l.indent[2:]
 		saveIndent = l.indent
+		l.Unlock()
 		f = f[1:]
 		if f == "" {
 			return
