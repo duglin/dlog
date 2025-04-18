@@ -28,15 +28,12 @@ func (l *DLogger) VPrint(v int, a ...any) {
 }
 
 func (l *DLogger) VPrintf(v int, f string, a ...any) {
-	if v > l.verbose {
-		return
-	}
-
 	l.Lock()
 	iLen := len(l.indent)
 	saveIndent := l.indent
 	l.Unlock()
 
+	// Even if we're not at the right level, process the "<" and ">"
 	if len(f) > 0 && f[0] == '>' {
 		l.Lock()
 		l.indent = "| " + l.indent
@@ -55,6 +52,11 @@ func (l *DLogger) VPrintf(v int, f string, a ...any) {
 			return
 		}
 	}
+
+	if v > l.verbose {
+		return
+	}
+
 	f = saveIndent + f
 
 	l.log.Printf(f, a...)
@@ -75,9 +77,9 @@ func (l *DLogger) Panic(a ...any)                 { l.log.Panic(a...) }
 func (l *DLogger) Panicf(format string, a ...any) { l.log.Panicf(format, a...) }
 func (l *DLogger) Panicln(a ...any)               { l.log.Panicln(a...) }
 func (l *DLogger) Prefix() string                 { return l.log.Prefix() }
-func (l *DLogger) Print(a ...any)                 { l.VPrint(1, a...) }
-func (l *DLogger) Printf(f string, a ...any)      { l.VPrintf(1, f, a...) }
-func (l *DLogger) Println(a ...any)               { l.VPrintln(1, a...) }
+func (l *DLogger) Print(a ...any)                 { l.VPrint(0, a...) }
+func (l *DLogger) Printf(f string, a ...any)      { l.VPrintf(0, f, a...) }
+func (l *DLogger) Println(a ...any)               { l.VPrintln(0, a...) }
 func (l *DLogger) SetFlags(flag int)              { l.log.SetFlags(flag) }
 func (l *DLogger) SetOutput(w io.Writer)          { l.log.SetOutput(w) }
 func (l *DLogger) SetPrefix(prefix string)        { l.log.SetPrefix(prefix) }
