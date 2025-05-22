@@ -8,18 +8,21 @@ import (
 
 type DLogger struct {
 	sync.Mutex
-	verbose int
-	indent  string
-	log     *log.Logger
+	verbose    int
+	indent     string
+	log        *log.Logger
+	autoindent bool
 }
 
 var std = &DLogger{
-	verbose: 1,
-	log:     log.Default(),
+	verbose:    1,
+	log:        log.Default(),
+	autoindent: false,
 }
 
-func (log *DLogger) GetVerbose() int  { return log.verbose }
-func (log *DLogger) SetVerbose(v int) { log.verbose = v }
+func (log *DLogger) GetVerbose() int      { return log.verbose }
+func (log *DLogger) SetVerbose(v int)     { log.verbose = v }
+func (log *DLogger) SetAutoIndent(v bool) { log.autoindent = v }
 
 func (l *DLogger) VPrint(v int, a ...any) {
 	if v <= l.verbose {
@@ -35,18 +38,22 @@ func (l *DLogger) VPrintf(v int, f string, a ...any) {
 
 	// Even if we're not at the right level, process the "<" and ">"
 	if len(f) > 0 && f[0] == '>' {
-		l.Lock()
-		l.indent = "| " + l.indent
-		l.Unlock()
+		if l.autoindent {
+			l.Lock()
+			l.indent = "| " + l.indent
+			l.Unlock()
+		}
 		f = f[1:]
 		if f == "" {
 			return
 		}
 	} else if len(f) > 0 && f[0] == '<' && iLen > 1 {
-		l.Lock()
-		l.indent = l.indent[2:]
-		saveIndent = l.indent
-		l.Unlock()
+		if l.autoindent {
+			l.Lock()
+			l.indent = l.indent[2:]
+			saveIndent = l.indent
+			l.Unlock()
+		}
 		f = f[1:]
 		if f == "" {
 			return
