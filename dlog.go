@@ -3,6 +3,8 @@ package dlog
 import (
 	"io"
 	"log"
+	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -11,7 +13,8 @@ type DLogger struct {
 	verbose    int
 	indent     string
 	log        *log.Logger
-	autoindent bool
+	autoindent bool // do we indent children log msgs with: |
+	keywords   []string
 }
 
 var std = &DLogger{
@@ -23,6 +26,60 @@ var std = &DLogger{
 func (log *DLogger) GetVerbose() int      { return log.verbose }
 func (log *DLogger) SetVerbose(v int)     { log.verbose = v }
 func (log *DLogger) SetAutoIndent(v bool) { log.autoindent = v }
+
+func (log *DLogger) AddVerboseString(str string) {
+	for _, word := range strings.Split(str, ",") {
+		word = strings.TrimSpace(word)
+		if word == "" {
+			continue
+		}
+		i, err := strconv.Atoi(word)
+		if err == nil {
+			log.SetVerbose(i)
+		} else {
+			log.AddKeyword(word)
+		}
+	}
+}
+
+func (log *DLogger) DelVerboseString(str string) {
+	for _, word := range strings.Split(str, ",") {
+		word = strings.TrimSpace(word)
+		if word == "" {
+			continue
+		}
+		i, err := strconv.Atoi(word)
+		if err == nil {
+			log.SetVerbose(i)
+		} else {
+			log.DelKeyword(word)
+		}
+	}
+}
+
+func (log *DLogger) AddKeyword(s string) {
+	if log.keywords == nil {
+		log.keywords = []string{}
+	}
+	log.keywords = append(log.keywords, s)
+}
+
+func (log *DLogger) DelKeyword(s string) {
+	for i, k := range log.keywords {
+		if k == s {
+			log.keywords = append(log.keywords[:i], log.keywords[i+1:]...)
+		}
+	}
+}
+
+func (log *DLogger) HasKeyword(s string) bool {
+	for _, k := range log.keywords {
+		if k == s {
+			return true
+		}
+	}
+	return false
+}
 
 func (l *DLogger) VPrint(v int, a ...any) {
 	if v <= l.verbose {
@@ -75,6 +132,24 @@ func (l *DLogger) VPrintln(v int, a ...any) {
 	}
 }
 
+func (l *DLogger) KPrint(key string, a ...any) {
+	if l.HasKeyword(key) {
+		l.log.Print(a...)
+	}
+}
+
+func (l *DLogger) KPrintf(key string, f string, a ...any) {
+	if l.HasKeyword(key) {
+		l.log.Printf(f, a...)
+	}
+}
+
+func (l *DLogger) KPrintln(key string, a ...any) {
+	if l.HasKeyword(key) {
+		l.log.Println(a...)
+	}
+}
+
 func (l *DLogger) Fatal(a ...any)                 { l.log.Fatal(a...) }
 func (l *DLogger) Fatalf(f string, a ...any)      { l.log.Fatalf(f, a...) }
 func (l *DLogger) Fatalln(a ...any)               { l.log.Fatalln(a...) }
@@ -93,11 +168,14 @@ func (l *DLogger) SetPrefix(prefix string)        { l.log.SetPrefix(prefix) }
 func (l *DLogger) Writer() io.Writer              { return l.log.Writer() }
 
 // Default logger stuff
-func GetVerbose() int                   { return std.GetVerbose() }
-func SetVerbose(v int)                  { std.SetVerbose(v) }
-func VPrint(v int, a ...any)            { std.VPrint(v, a...) }
-func VPrintf(v int, f string, a ...any) { std.VPrintf(v, f, a...) }
-func VPrintln(v int, a ...any)          { std.VPrintln(v, a...) }
+func GetVerbose() int                      { return std.GetVerbose() }
+func SetVerbose(v int)                     { std.SetVerbose(v) }
+func VPrint(v int, a ...any)               { std.VPrint(v, a...) }
+func VPrintf(v int, f string, a ...any)    { std.VPrintf(v, f, a...) }
+func VPrintln(v int, a ...any)             { std.VPrintln(v, a...) }
+func KPrint(k string, a ...any)            { std.KPrint(k, a...) }
+func KPrintf(k string, f string, a ...any) { std.KPrintf(k, f, a...) }
+func KPrintln(k string, a ...any)          { std.KPrintln(k, a...) }
 
 func Fatal(a ...any)                 { std.Fatal(a...) }
 func Fatalf(f string, a ...any)      { std.Fatalf(f, a...) }
