@@ -170,6 +170,7 @@ func (l *DLogger) Writer() io.Writer              { return l.log.Writer() }
 // Default logger stuff
 func GetVerbose() int                      { return std.GetVerbose() }
 func SetVerbose(v int)                     { std.SetVerbose(v) }
+func HasKeyword(str string) bool           { return std.HasKeyword(str) }
 func AddVerboseString(str string)          { std.AddVerboseString(str) }
 func DelVerboseString(str string)          { std.DelVerboseString(str) }
 func VPrint(v int, a ...any)               { std.VPrint(v, a...) }
