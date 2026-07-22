@@ -1,6 +1,7 @@
 package dlog
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"strconv"
@@ -21,6 +22,11 @@ var std = &DLogger{
 	verbose:    1,
 	log:        log.Default(),
 	autoindent: false,
+}
+
+func (log *DLogger) String() string {
+	return fmt.Sprintf("Log: verbose:%d indent:%q autoindent:%v keywords:%v",
+		log.verbose, log.indent, log.autoindent, log.keywords)
 }
 
 func (log *DLogger) GetVerbose() int      { return log.verbose }
@@ -83,93 +89,61 @@ func (log *DLogger) HasKeyword(s string) bool {
 	return false
 }
 
-func (l *DLogger) VPrint(v int, f string, a ...any) {
-	f = l.processIndents(f)
-	if f == "" || v > l.verbose {
-		return
-	}
-	l.log.Print(a...)
-}
-
-func (l *DLogger) processIndents(f string) string {
-	if len(f) == 0 {
-		return ""
-	}
-
-	l.Lock()
-	saveIndent := l.indent
-	l.Unlock()
-	iLen := len(saveIndent)
+func (l *DLogger) print(doit bool, f string, a ...any) {
+	prefix := ""
 
 	if len(f) > 0 && f[0] == '>' {
-		if l.autoindent {
+		if doit && l.autoindent {
 			l.Lock()
+			prefix = l.indent
 			l.indent = "| " + l.indent
 			l.Unlock()
 		}
 		f = f[1:]
-		if f == "" {
-			return f
-		}
-	} else if len(f) > 0 && f[0] == '<' && iLen > 1 {
-		if l.autoindent {
+	} else if len(f) > 0 && f[0] == '<' {
+		if doit && l.autoindent {
 			l.Lock()
-			l.indent = l.indent[2:]
-			saveIndent = l.indent
+			if len(l.indent) > 1 {
+				l.indent = l.indent[2:]
+			}
+			prefix = l.indent
 			l.Unlock()
 		}
+
 		f = f[1:]
-		if f == "" {
-			return f
-		}
+	} else {
+		l.Lock()
+		prefix = l.indent
+		l.Unlock()
 	}
 
-	return saveIndent + f
+	if doit {
+		l.log.Printf(prefix+f, a...)
+	}
+}
+
+func (l *DLogger) VPrint(v int, a ...any) {
+	l.print(v <= l.verbose, "%s", a...)
 }
 
 func (l *DLogger) VPrintf(v int, f string, a ...any) {
-	f = l.processIndents(f)
-	if f == "" || v > l.verbose {
-		return
-	}
-
-	l.log.Printf(f, a...)
+	l.print(v <= l.verbose, f, a...)
 }
 
-func (l *DLogger) VPrintln(v int, f string, a ...any) {
-	f = l.processIndents(f)
-	if f == "" || v > l.verbose {
-		return
-	}
-
-	l.log.Println(a...)
+func (l *DLogger) VPrintln(v int, a ...any) {
+	l.print(v <= l.verbose, "%s", fmt.Sprintln(a...))
 }
 
-func (l *DLogger) KPrint(key string, f string, a ...any) {
-	f = l.processIndents(f)
-	if f == "" || !l.HasKeyword(key) {
-		return
-	}
-
-	a = append([]any{f}, a...)
-	l.log.Print(a...)
+func (l *DLogger) KPrint(key string, a ...any) {
+	l.print(l.HasKeyword(key), "%s", fmt.Sprint(a...))
 }
 
 func (l *DLogger) KPrintf(key string, f string, a ...any) {
-	f = l.processIndents(f)
-	if f == "" || !l.HasKeyword(key) {
-		return
-	}
-	l.log.Printf(f, a...)
+	l.print(l.HasKeyword(key), f, a...)
 }
 
-func (l *DLogger) KPrintln(key string, f string, a ...any) {
-	f = l.processIndents(f)
-	if f == "" || !l.HasKeyword(key) {
-		return
-	}
-	a = append([]any{f}, a...)
-	l.log.Println(a...)
+func (l *DLogger) KPrintln(key string, a ...any) {
+	l.print(l.HasKeyword(key), "%s", fmt.Sprintln(a...))
 }
 
 func (l *DLogger) Fatal(a ...any)                 { l.log.Fatal(a...) }
@@ -181,27 +155,30 @@ func (l *DLogger) Panic(a ...any)                 { l.log.Panic(a...) }
 func (l *DLogger) Panicf(format string, a ...any) { l.log.Panicf(format, a...) }
 func (l *DLogger) Panicln(a ...any)               { l.log.Panicln(a...) }
 func (l *DLogger) Prefix() string                 { return l.log.Prefix() }
-func (l *DLogger) Print(f string, a ...any)       { l.VPrint(0, f, a...) }
+func (l *DLogger) Print(a ...any)                 { l.VPrint(0, a...) }
 func (l *DLogger) Printf(f string, a ...any)      { l.VPrintf(0, f, a...) }
-func (l *DLogger) Println(f string, a ...any)     { l.VPrintln(0, f, a...) }
+func (l *DLogger) Println(a ...any)               { l.VPrintln(0, a...) }
 func (l *DLogger) SetFlags(flag int)              { l.log.SetFlags(flag) }
 func (l *DLogger) SetOutput(w io.Writer)          { l.log.SetOutput(w) }
 func (l *DLogger) SetPrefix(prefix string)        { l.log.SetPrefix(prefix) }
 func (l *DLogger) Writer() io.Writer              { return l.log.Writer() }
 
 // Default logger stuff
-func GetVerbose() int                       { return std.GetVerbose() }
-func SetVerbose(v int)                      { std.SetVerbose(v) }
-func SetAutoIndent(v bool)                  { std.SetAutoIndent(v) }
-func HasKeyword(str string) bool            { return std.HasKeyword(str) }
-func AddVerboseString(str string)           { std.AddVerboseString(str) }
-func DelVerboseString(str string)           { std.DelVerboseString(str) }
-func VPrint(v int, f string, a ...any)      { std.VPrint(v, f, a...) }
-func VPrintf(v int, f string, a ...any)     { std.VPrintf(v, f, a...) }
-func VPrintln(v int, f string, a ...any)    { std.VPrintln(v, f, a...) }
-func KPrint(k string, f string, a ...any)   { std.KPrint(k, f, a...) }
-func KPrintf(k string, f string, a ...any)  { std.KPrintf(k, f, a...) }
-func KPrintln(k string, f string, a ...any) { std.KPrintln(k, f, a...) }
+func String() string                       { return std.String() }
+func GetVerbose() int                      { return std.GetVerbose() }
+func SetVerbose(v int)                     { std.SetVerbose(v) }
+func SetAutoIndent(v bool)                 { std.SetAutoIndent(v) }
+func AddVerboseString(str string)          { std.AddVerboseString(str) }
+func DelVerboseString(str string)          { std.DelVerboseString(str) }
+func AddKeyword(str string)                { std.AddKeyword(str) }
+func DelKeyword(str string)                { std.DelKeyword(str) }
+func HasKeyword(str string) bool           { return std.HasKeyword(str) }
+func VPrint(v int, a ...any)               { std.VPrint(v, a...) }
+func VPrintf(v int, f string, a ...any)    { std.VPrintf(v, f, a...) }
+func VPrintln(v int, a ...any)             { std.VPrintln(v, a...) }
+func KPrint(k string, a ...any)            { std.KPrint(k, a...) }
+func KPrintf(k string, f string, a ...any) { std.KPrintf(k, f, a...) }
+func KPrintln(k string, a ...any)          { std.KPrintln(k, a...) }
 
 func Fatal(a ...any)                 { std.Fatal(a...) }
 func Fatalf(f string, a ...any)      { std.Fatalf(f, a...) }
@@ -212,9 +189,9 @@ func Panic(a ...any)                 { std.Panic(a...) }
 func Panicf(format string, a ...any) { std.Panicf(format, a...) }
 func Panicln(a ...any)               { std.Panicln(a...) }
 func Prefix() string                 { return std.Prefix() }
-func Print(f string, a ...any)       { std.Print(f, a...) }
+func Print(a ...any)                 { std.Print(a...) }
 func Printf(f string, a ...any)      { std.Printf(f, a...) }
-func Println(f string, a ...any)     { std.Println(f, a...) }
+func Println(a ...any)               { std.Println(a...) }
 func SetFlags(flag int)              { std.SetFlags(flag) }
 func SetOutput(w io.Writer)          { std.SetOutput(w) }
 func SetPrefix(prefix string)        { std.SetPrefix(prefix) }
