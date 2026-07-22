@@ -27,6 +27,8 @@ func (log *DLogger) GetVerbose() int      { return log.verbose }
 func (log *DLogger) SetVerbose(v int)     { log.verbose = v }
 func (log *DLogger) SetAutoIndent(v bool) { log.autoindent = v }
 
+// str is of the form xxx,xxx where xxx is either the version int
+// for use with VPrint or a keyword for use with KPrint
 func (log *DLogger) AddVerboseString(str string) {
 	for _, word := range strings.Split(str, ",") {
 		word = strings.TrimSpace(word)
@@ -170,6 +172,7 @@ func (l *DLogger) Writer() io.Writer              { return l.log.Writer() }
 // Default logger stuff
 func GetVerbose() int                      { return std.GetVerbose() }
 func SetVerbose(v int)                     { std.SetVerbose(v) }
+func SetAutoIndent(v bool)                 { std.SetAutoIndent(v) }
 func HasKeyword(str string) bool           { return std.HasKeyword(str) }
 func AddVerboseString(str string)          { std.AddVerboseString(str) }
 func DelVerboseString(str string)          { std.DelVerboseString(str) }
