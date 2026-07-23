@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 type DLogger struct {
@@ -89,32 +91,41 @@ func (log *DLogger) HasKeyword(s string) bool {
 	return false
 }
 
+// pre,post
+func (l *DLogger) modIndent(grow bool) (string, string) {
+	if !l.autoindent {
+		return l.indent, l.indent
+	}
+
+	pre := l.indent
+	l.Lock()
+	defer l.Unlock()
+
+	if grow {
+		l.indent = "| " + l.indent
+	} else {
+		if len(l.indent) > 1 {
+			l.indent = l.indent[2:]
+		}
+	}
+	return pre, l.indent
+}
+
 func (l *DLogger) print(doit bool, f string, a ...any) {
 	prefix := ""
 
 	if len(f) > 0 && f[0] == '>' {
-		if doit && l.autoindent {
-			l.Lock()
-			prefix = l.indent
-			l.indent = "| " + l.indent
-			l.Unlock()
+		if doit {
+			prefix, _ = l.modIndent(true)
 		}
 		f = f[1:]
 	} else if len(f) > 0 && f[0] == '<' {
-		if doit && l.autoindent {
-			l.Lock()
-			if len(l.indent) > 1 {
-				l.indent = l.indent[2:]
-			}
-			prefix = l.indent
-			l.Unlock()
+		if doit {
+			_, prefix = l.modIndent(false)
 		}
-
 		f = f[1:]
 	} else {
-		l.Lock()
 		prefix = l.indent
-		l.Unlock()
 	}
 
 	if doit {
@@ -144,6 +155,54 @@ func (l *DLogger) KPrintf(key string, f string, a ...any) {
 
 func (l *DLogger) KPrintln(key string, a ...any) {
 	l.print(l.HasKeyword(key), "%s", fmt.Sprintln(a...))
+}
+
+func (l *DLogger) Trace(key any, args ...any) func() {
+	if keyStr, ok := key.(string); ok {
+		if !l.HasKeyword(keyStr) {
+			return func() {}
+		}
+	} else if levelInt, ok := key.(int); ok {
+		if levelInt <= l.verbose {
+			return func() {}
+		}
+	} else if key != nil {
+		panic("Trace can only be called with string or int")
+	}
+
+	fnName := ""
+	doIndent := false
+	saveIndent := l.indent
+	var startTime time.Time
+	format := ""
+
+	if len(args) > 0 {
+		ok := false
+		if format, ok = args[0].(string); ok {
+			pc, _, _, _ := runtime.Caller(2)
+			fnName = runtime.FuncForPC(pc).Name()
+			if i := strings.LastIndex(fnName, "."); i >= 0 {
+				fnName = fnName[i+1:]
+			}
+			startTime = time.Now()
+
+			l.modIndent(true)
+			doIndent = true
+			format = saveIndent + "Enter: " + fnName + ": " + format
+			args = args[1:]
+		}
+	}
+
+	l.log.Printf(format, args...)
+
+	if !doIndent {
+		return func() {}
+	}
+
+	return func() {
+		l.modIndent(false)
+		l.log.Printf(saveIndent+"Exit: %s (%v)", fnName, time.Since(startTime))
+	}
 }
 
 func (l *DLogger) Fatal(a ...any)                 { l.log.Fatal(a...) }
@@ -179,6 +238,7 @@ func VPrintln(v int, a ...any)             { std.VPrintln(v, a...) }
 func KPrint(k string, a ...any)            { std.KPrint(k, a...) }
 func KPrintf(k string, f string, a ...any) { std.KPrintf(k, f, a...) }
 func KPrintln(k string, a ...any)          { std.KPrintln(k, a...) }
+func Trace(k any, a ...any) func()         { return std.Trace(k, a...) }
 
 func Fatal(a ...any)                 { std.Fatal(a...) }
 func Fatalf(f string, a ...any)      { std.Fatalf(f, a...) }
