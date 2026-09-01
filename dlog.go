@@ -13,196 +13,516 @@ import (
 
 type DLogger struct {
 	sync.Mutex
-	verbose    int
-	indent     string
-	log        *log.Logger
-	autoindent bool // do we indent children log msgs with: |
-	keywords   []string
+	log    *log.Logger
+	indent string
+	flat   bool // do we indent children log msgs with: |
+	ascii  bool
+
+	// Current logging flags
+	currentUF *userFlags // current set of user chosen version level/triggers
+
+	stack []*userFlags // entry created by Trace or "<"
 }
 
 var std = &DLogger{
-	verbose:    1,
-	log:        log.Default(),
-	autoindent: false,
+	log: log.Default(),
+	currentUF: &userFlags{
+		verbose: 1,
+	},
 }
+
+type userFlags struct {
+	verbose       int
+	showAllTraces bool
+	showAllPrints bool
+	showTime      bool
+	triggers      map[string]*userFlags
+}
+
+func (uf *userFlags) Clone() *userFlags {
+	if uf == nil {
+		return nil
+	}
+	newUF := userFlags{
+		verbose:       uf.verbose,
+		showAllTraces: uf.showAllTraces,
+		showAllPrints: uf.showAllPrints,
+		showTime:      uf.showTime,
+	}
+
+	if len(uf.triggers) > 0 {
+		newUF.triggers = map[string]*userFlags{}
+		for k, kUF := range uf.triggers {
+			newUF.triggers[k] = kUF.Clone()
+		}
+	}
+
+	return &newUF
+}
+
+func (uf *userFlags) merge(key string, otherUF *userFlags) *userFlags {
+	if otherUF.verbose > uf.verbose {
+		uf.verbose = otherUF.verbose
+	}
+	uf.showAllTraces = uf.showAllTraces || otherUF.showAllTraces
+	uf.showAllPrints = uf.showAllPrints || otherUF.showAllPrints
+	uf.showTime = uf.showTime || otherUF.showTime
+	for k, kw := range otherUF.triggers {
+		if k == key {
+			// continue
+		}
+		if uf.triggers == nil {
+			uf.triggers = map[string]*userFlags{}
+		}
+		tmpkw := uf.triggers[k]
+		if tmpkw != nil {
+			kw = tmpkw.merge(k, kw)
+		}
+		uf.triggers[k] = kw
+	}
+	return uf
+}
+
+func (log *DLogger) Top() string {
+	if log.flat {
+		return ">"
+	}
+	if log.ascii {
+		return "+"
+	}
+	return "┌"
+}
+
+func (log *DLogger) Bar() string {
+	if log.flat {
+		return ""
+	}
+	if log.ascii {
+		return "|"
+	}
+	return "│"
+}
+
+func (log *DLogger) Bot() string {
+	if log.flat {
+		return "<"
+	}
+	if log.ascii {
+		return "+"
+	}
+	return "└"
+}
+
+const TOP = "┌"
 
 func (log *DLogger) String() string {
-	return fmt.Sprintf("Log: verbose:%d indent:%q autoindent:%v keywords:%v",
-		log.verbose, log.indent, log.autoindent, log.keywords)
+	str := ""
+	if !log.flat {
+		str += "Indented,"
+	}
+	if log.ascii {
+		str += "Ascii,"
+	}
+
+	str += "Current: "
+
+	fn := func(string, string, *userFlags) string { return "" }
+	fn = func(indent string, key string, uf *userFlags) string {
+		s := fmt.Sprintf("%d", uf.verbose)
+		if uf.showAllTraces {
+			s += ", AllTraces"
+		}
+		if uf.showAllPrints {
+			s += ", AllPrints"
+		}
+		if uf.showTime {
+			s += ", ShowTimes"
+		}
+		s += "\n"
+
+		indent = strings.Repeat(" ", len(indent))
+		for key, nextUF := range uf.triggers {
+			s += indent + "  L " + key + ": " + fn(indent+"  ", key, nextUF)
+		}
+		return s
+	}
+
+	return str + fn("Current:", "", log.currentUF)
 }
 
-func (log *DLogger) GetVerbose() int      { return log.verbose }
-func (log *DLogger) SetVerbose(v int)     { log.verbose = v }
-func (log *DLogger) SetAutoIndent(v bool) { log.autoindent = v }
+func (log *DLogger) Dump() string {
+	buf := &strings.Builder{}
 
-// str is of the form xxx,xxx where xxx is either the version int
-// for use with VPrint or a keyword for use with KPrint
-func (log *DLogger) AddVerboseString(str string) {
-	for _, word := range strings.Split(str, ",") {
-		word = strings.TrimSpace(word)
-		if word == "" {
+	if !log.flat {
+		fmt.Fprint(buf, "indent,")
+	}
+
+	if log.ascii {
+		fmt.Fprint(buf, "ascii,")
+	}
+
+	fmt.Fprintf(buf, "curr(")
+
+	fn := func(*userFlags) {}
+	fn = func(uf *userFlags) {
+		if uf == nil {
+			fmt.Fprintf(buf, "nil")
+			return
+		}
+
+		fmt.Fprintf(buf, "v:%d", uf.verbose)
+		if uf.showAllTraces {
+			fmt.Fprintf(buf, ",traces")
+		}
+		if uf.showAllPrints {
+			fmt.Fprintf(buf, ",prints")
+		}
+		if uf.showTime {
+			fmt.Fprintf(buf, ",time")
+		}
+
+		i := 0
+		for k, kUF := range uf.triggers {
+			if i == 0 {
+				fmt.Fprintf(buf, ",[")
+			}
+			fmt.Fprintf(buf, "%s(", k)
+			fn(kUF)
+			fmt.Fprintf(buf, ")")
+			if i+1 == len(uf.triggers) {
+				fmt.Fprintf(buf, "]")
+			} else {
+				fmt.Fprintf(buf, ",")
+			}
+			i++
+		}
+	}
+
+	fn(log.currentUF)
+	fmt.Fprintf(buf, ")")
+	/*
+		        if len(log.stack) > 0 {
+				    fmt.Fprintf(buf, ",stack(")
+				for _, s := range log.stack {
+					fn(s)
+				}
+		            fmt.Fprintf(buf,")")
+		        }
+	*/
+	return buf.String()
+}
+
+func (log *DLogger) Reset() {
+	log.indent = ""
+	log.flat = false
+	log.ascii = false
+	log.currentUF = &userFlags{}
+	log.stack = nil
+}
+
+func (log *DLogger) GetVerbose() int  { return log.currentUF.verbose }
+func (log *DLogger) SetIndent(v bool) { log.flat = !v }
+func (log *DLogger) SetAscii(v bool)  { log.ascii = v }
+
+// trigger must be: int or string (xxx,xxx where xxx is int or string)
+func (log *DLogger) SetVerbose(triggers ...any) {
+	for _, trigger := range triggers {
+		v, ok := trigger.(int)
+		if ok {
+			log.currentUF.verbose = v
 			continue
 		}
-		i, err := strconv.Atoi(word)
-		if err == nil {
-			log.SetVerbose(i)
-		} else {
-			log.AddKeyword(word)
+		str, ok := trigger.(string)
+		if !ok {
+			panic(fmt.Sprintf("trigger must be an int or string: %v", trigger))
+		}
+
+		for _, expr := range strings.Split(str, ",") {
+			if expr = strings.TrimSpace(expr); expr == "" {
+				continue
+			}
+
+			fn := func(*userFlags, []string) {}
+			fn = func(uf *userFlags, words []string) {
+				for i, word := range words {
+					word = strings.TrimSpace(word)
+					if word == "" {
+						continue
+					} else if word == "flat" {
+						log.flat = true
+					} else if word == "ascii" {
+						log.ascii = true
+					} else if word == "time" || word == "timed" {
+						uf.showTime = true
+					} else if word == "*" {
+						uf.showAllTraces = true
+					} else if word == "**" {
+						uf.showAllPrints = true
+					} else if v, err := strconv.Atoi(word); err == nil {
+						uf.verbose = v
+					} else {
+						if uf.triggers == nil {
+							uf.triggers = map[string]*userFlags{}
+						}
+						newUF := uf.triggers[word]
+						if newUF == nil {
+							newUF = &userFlags{}
+							uf.triggers[word] = newUF
+						}
+						fn(newUF, words[i+1:])
+						break
+					}
+				}
+			}
+
+			words := strings.Split(expr, ":")
+			fn(log.currentUF, words)
 		}
 	}
 }
 
-func (log *DLogger) DelVerboseString(str string) {
-	for _, word := range strings.Split(str, ",") {
-		word = strings.TrimSpace(word)
-		if word == "" {
+func (log *DLogger) DelVerbose(triggers ...any) {
+	rootUF := log.currentUF
+	if l := len(log.stack); l > 0 {
+		rootUF = log.stack[l-1]
+	}
+
+	for _, trigger := range triggers {
+		if _, ok := trigger.(int); ok {
+			log.currentUF.verbose = 0
 			continue
 		}
-		i, err := strconv.Atoi(word)
-		if err == nil {
-			log.SetVerbose(i)
-		} else {
-			log.DelKeyword(word)
+
+		str, ok := trigger.(string)
+		if !ok {
+			panic(fmt.Sprintf("trigger must be an int or string: %v", trigger))
+		}
+
+		for _, expr := range strings.Split(str, ",") {
+			words := strings.Split(expr, ":")
+			tmpUF := rootUF
+			numWords := len(words)
+			for i, word := range words {
+				if word = strings.TrimSpace(word); word == "" {
+					continue
+				}
+
+				if word == "*" {
+					tmpUF.showAllTraces = false
+				} else if word == "**" {
+					tmpUF.showAllPrints = false
+				} else {
+					if i+1 == numWords {
+						if _, intErr := strconv.Atoi(word); intErr == nil {
+							tmpUF.verbose = 0
+						} else {
+							delete(tmpUF.triggers, word)
+						}
+					} else {
+						tmpUF = tmpUF.triggers[word]
+						if tmpUF == nil {
+							break // stop traversing
+						}
+					}
+				}
+			}
 		}
 	}
 }
 
-func (log *DLogger) AddKeyword(s string) {
-	if log.keywords == nil {
-		log.keywords = []string{}
-	}
-	log.keywords = append(log.keywords, s)
+func (log *DLogger) HasVerbose(s string) bool {
+	return log.currentUF.triggers[s] != nil
 }
 
-func (log *DLogger) DelKeyword(s string) {
-	for i, k := range log.keywords {
-		if k == s {
-			log.keywords = append(log.keywords[:i], log.keywords[i+1:]...)
-		}
-	}
-}
-
-func (log *DLogger) HasKeyword(s string) bool {
-	for _, k := range log.keywords {
-		if k == s {
-			return true
-		}
-	}
-	return false
-}
-
-// pre,post
-func (l *DLogger) modIndent(grow bool) (string, string) {
-	if !l.autoindent {
-		return l.indent, l.indent
-	}
-
+// pre,post indent string
+func (l *DLogger) modScope(grow bool, key string) (string, string) {
 	pre := l.indent
-	l.Lock()
-	defer l.Unlock()
 
+	if !l.flat {
+		l.Lock()
+		defer l.Unlock()
+	}
+
+	indentStr := l.Bar() + "   "
 	if grow {
-		l.indent = "| " + l.indent
+		if !l.flat {
+			l.indent = indentStr + l.indent
+		}
+		// fmt.Printf("PRE MOD (%s):\n%s\n", key, l.Dump())
+
+		l.stack = append([]*userFlags{l.currentUF}, l.stack...)
+		l.currentUF = l.currentUF.triggers[key].Clone()
+		// fmt.Printf("POST-1 MOD (%s):\n%s\n", key, l.Dump())
+		if l.currentUF == nil {
+			l.currentUF = l.stack[0].Clone()
+		} else {
+			l.currentUF.merge(key, l.stack[0])
+		}
+		// fmt.Printf("POST-2 MOD (%s):\n%s\n", key, l.Dump())
 	} else {
-		if len(l.indent) > 1 {
-			l.indent = l.indent[2:]
+		if !l.flat && len(l.indent) > 1 {
+			l.indent = l.indent[len(indentStr):]
+		}
+		if len(l.stack) > 0 {
+			l.currentUF = l.stack[0]
+			l.stack = l.stack[1:]
 		}
 	}
+
 	return pre, l.indent
 }
 
-func (l *DLogger) print(doit bool, f string, a ...any) {
-	prefix := ""
-
-	if len(f) > 0 && f[0] == '>' {
-		if doit {
-			prefix, _ = l.modIndent(true)
-		}
-		f = f[1:]
-	} else if len(f) > 0 && f[0] == '<' {
-		if doit {
-			_, prefix = l.modIndent(false)
-		}
-		f = f[1:]
-	} else {
-		prefix = l.indent
+func (l *DLogger) checkVTrigger(key any) bool {
+	if keyStr, ok := key.(string); ok {
+		return l.HasVerbose(keyStr)
+	} else if levelInt, ok := key.(int); ok {
+		return levelInt <= l.currentUF.verbose
+	} else if key != nil {
+		return true
 	}
+	panic("Verbose trigger can only be called with string or int")
+}
+
+func (l *DLogger) print(doit bool, k any, f string, a ...any) func() {
+	prefix := ""
+	retFunc := func() {}
+
+	/*
+		key, ok := k.(string)
+		if !ok {
+			key = fmt.Sprintf("%v", k)
+		}
+
+		ENTER := l.Top() + " " // "+ " // "+ " // ENTER := "Enter: "
+		EXIT :=  l.Bot() + " " // "+ "  // "+ "  // "└─ " // EXIT := "Exit: "
+
+			if len(f) > 0 && f[0] == '>' {
+				if doit {
+					prefix, _ = l.modScope(true, key)
+					prefix = prefix + ENTER
+					f = f[1:]
+					startTime := time.Now()
+					doTime := l.currentUF.showTime
+
+					retFunc = func() {
+						_, indent := l.modScope(false, "")
+						suffix := ""
+						if doTime {
+							suffix = fmt.Sprintf(" time: %v", time.Since(startTime))
+						}
+						l.log.Printf(indent+EXIT+f+suffix, a...)
+					}
+				}
+			} else if len(f) > 0 && f[0] == '<' {
+				if doit {
+					_, prefix = l.modScope(false, key)
+					prefix = prefix + EXIT
+				}
+				f = f[1:]
+			} else {
+	*/
+	prefix = l.indent
+	// }
 
 	if doit {
 		l.log.Printf(prefix+f, a...)
 	}
+
+	return retFunc
 }
 
-func (l *DLogger) VPrint(v int, a ...any) {
-	l.print(v <= l.verbose, "%s", a...)
+func (l *DLogger) VPrint(k any, a ...any) func() {
+	return l.print(l.currentUF.showAllPrints || l.checkVTrigger(k), k,
+		JoinArgs(a...))
 }
 
-func (l *DLogger) VPrintf(v int, f string, a ...any) {
-	l.print(v <= l.verbose, f, a...)
+func (l *DLogger) VPrintf(k any, f string, a ...any) func() {
+	return l.print(l.currentUF.showAllPrints || l.checkVTrigger(k), k, f, a...)
 }
 
-func (l *DLogger) VPrintln(v int, a ...any) {
-	l.print(v <= l.verbose, "%s", fmt.Sprintln(a...))
+func (l *DLogger) VPrintln(k any, a ...any) func() {
+	return l.print(l.currentUF.showAllPrints || l.checkVTrigger(k), k,
+		fmt.Sprintln(a...))
 }
 
-func (l *DLogger) KPrint(key string, a ...any) {
-	l.print(l.HasKeyword(key), "%s", fmt.Sprint(a...))
+func (l *DLogger) VTracef(key any, f string, args ...any) func() {
+	return VTrace(key, append([]any{f}, args...)...)
 }
 
-func (l *DLogger) KPrintf(key string, f string, a ...any) {
-	l.print(l.HasKeyword(key), f, a...)
-}
-
-func (l *DLogger) KPrintln(key string, a ...any) {
-	l.print(l.HasKeyword(key), "%s", fmt.Sprintln(a...))
-}
-
-func (l *DLogger) Trace(key any, args ...any) func() {
-	if keyStr, ok := key.(string); ok {
-		if !l.HasKeyword(keyStr) {
-			return func() {}
-		}
-	} else if levelInt, ok := key.(int); ok {
-		if levelInt <= l.verbose {
-			return func() {}
-		}
-	} else if key != nil {
-		panic("Trace can only be called with string or int")
-	}
-
-	fnName := ""
-	doIndent := false
-	saveIndent := l.indent
-	var startTime time.Time
-	format := ""
-
-	if len(args) > 0 {
-		ok := false
-		if format, ok = args[0].(string); ok {
-			pc, _, _, _ := runtime.Caller(2)
-			fnName = runtime.FuncForPC(pc).Name()
-			if i := strings.LastIndex(fnName, "."); i >= 0 {
-				fnName = fnName[i+1:]
-			}
-			startTime = time.Now()
-
-			l.modIndent(true)
-			doIndent = true
-			format = saveIndent + "Enter: " + fnName + ": " + format
-			args = args[1:]
-		}
-	}
-
-	l.log.Printf(format, args...)
-
-	if !doIndent {
+func (l *DLogger) VTrace(key any, args ...any) func() {
+	if !l.currentUF.showAllTraces && !l.checkVTrigger(key) {
 		return func() {}
 	}
 
-	return func() {
-		l.modIndent(false)
-		l.log.Printf(saveIndent+"Exit: %s (%v)", fnName, time.Since(startTime))
+	modKey, ok := key.(string)
+	if !ok {
+		modKey = fmt.Sprintf("%v", key)
 	}
+	showKey := modKey
+
+	format := l.indent
+	ENTER := l.Top() + " " // "+ " // "+ " // ENTER := "Enter: "
+	EXIT := l.Bot() + " "  // "+ "  // "+ "  // "└─ " // EXIT := "Exit: "
+
+	format += ENTER + showKey // + ":"
+	if len(showKey) > 0 && len(args) > 0 {
+		format += ":"
+	}
+	startTime := time.Now()
+
+	l.modScope(true, modKey)
+	doTime := l.currentUF.showTime
+
+	retFunc := func() {
+		_, indent := l.modScope(false, "")
+		suffix := ""
+		if doTime {
+			suffix = fmt.Sprintf(" time: %v", time.Since(startTime))
+		}
+		l.log.Printf(indent + EXIT + showKey + suffix)
+	}
+
+	if len(args) > 0 {
+		if fmtStr, ok := args[0].(string); ok {
+			if strings.Contains(fmtStr, "%") {
+				format += " " + fmt.Sprintf(fmtStr, args[1:]...)
+			} else {
+				format += " " + JoinArgs(args...)
+			}
+		} else {
+			format += " " + JoinArgs(args...)
+		}
+	}
+
+	l.log.Printf(format)
+	return retFunc
+}
+
+func (l *DLogger) Tracef(f string, args ...any) func() {
+	// return VTrace(append([]any{f}, args...)...)
+	if !l.currentUF.showAllTraces && len(l.currentUF.triggers) == 0 {
+		return func() {}
+	}
+	fnName := ""
+	pc, _, _, _ := runtime.Caller(2)
+	fnName = runtime.FuncForPC(pc).Name()
+	if i := strings.LastIndex(fnName, "."); i >= 0 {
+		fnName = fnName[i+1:]
+	}
+	return VTrace(fnName, append([]any{f}, args...)...)
+}
+
+func (l *DLogger) Trace(args ...any) func() {
+	if !l.currentUF.showAllTraces && len(l.currentUF.triggers) == 0 {
+		return func() {}
+	}
+	fnName := ""
+	pc, _, _, _ := runtime.Caller(2)
+	fnName = runtime.FuncForPC(pc).Name()
+	if i := strings.LastIndex(fnName, "."); i >= 0 {
+		fnName = fnName[i+1:]
+	}
+	return VTrace(fnName, args...)
 }
 
 func (l *DLogger) Fatal(a ...any)                 { l.log.Fatal(a...) }
@@ -223,22 +543,22 @@ func (l *DLogger) SetPrefix(prefix string)        { l.log.SetPrefix(prefix) }
 func (l *DLogger) Writer() io.Writer              { return l.log.Writer() }
 
 // Default logger stuff
-func String() string                       { return std.String() }
-func GetVerbose() int                      { return std.GetVerbose() }
-func SetVerbose(v int)                     { std.SetVerbose(v) }
-func SetAutoIndent(v bool)                 { std.SetAutoIndent(v) }
-func AddVerboseString(str string)          { std.AddVerboseString(str) }
-func DelVerboseString(str string)          { std.DelVerboseString(str) }
-func AddKeyword(str string)                { std.AddKeyword(str) }
-func DelKeyword(str string)                { std.DelKeyword(str) }
-func HasKeyword(str string) bool           { return std.HasKeyword(str) }
-func VPrint(v int, a ...any)               { std.VPrint(v, a...) }
-func VPrintf(v int, f string, a ...any)    { std.VPrintf(v, f, a...) }
-func VPrintln(v int, a ...any)             { std.VPrintln(v, a...) }
-func KPrint(k string, a ...any)            { std.KPrint(k, a...) }
-func KPrintf(k string, f string, a ...any) { std.KPrintf(k, f, a...) }
-func KPrintln(k string, a ...any)          { std.KPrintln(k, a...) }
-func Trace(k any, a ...any) func()         { return std.Trace(k, a...) }
+func Reset()                   { std.Reset() }
+func GetVerbose() int          { return std.GetVerbose() }
+func SetVerbose(k ...any)      { std.SetVerbose(k...) }
+func DelVerbose(k ...any)      { std.DelVerbose(k...) }
+func HasVerbose(k string) bool { return std.HasVerbose(k) }
+func SetIndent(v bool)         { std.SetIndent(v) }
+func String() string           { return std.String() }
+func Dump() string             { return std.Dump() }
+
+func VPrint(k any, a ...any) func()            { return std.VPrint(k, a...) }
+func VPrintf(k any, f string, a ...any) func() { return std.VPrintf(k, f, a...) }
+func VPrintln(k any, a ...any) func()          { return std.VPrintln(k, a...) }
+func Trace(a ...any) func()                    { return std.Trace(a...) }
+func Tracef(f string, a ...any) func()         { return std.Tracef(f, a...) }
+func VTrace(k any, a ...any) func()            { return std.VTrace(k, a...) }
+func VTracef(k any, f string, a ...any) func() { return std.VTracef(k, f, a...) }
 
 func Fatal(a ...any)                 { std.Fatal(a...) }
 func Fatalf(f string, a ...any)      { std.Fatalf(f, a...) }
@@ -256,3 +576,14 @@ func SetFlags(flag int)              { std.SetFlags(flag) }
 func SetOutput(w io.Writer)          { std.SetOutput(w) }
 func SetPrefix(prefix string)        { std.SetPrefix(prefix) }
 func Writer() io.Writer              { return std.Writer() }
+
+func JoinArgs(args ...any) string {
+	buf := &strings.Builder{}
+	for _, a := range args {
+		if buf.Len() != 0 {
+			buf.WriteByte(' ')
+		}
+		fmt.Fprintf(buf, "%v", a)
+	}
+	return buf.String()
+}
