@@ -735,8 +735,9 @@ func TestVerboseFunc(t *testing.T) {
 	golog.SetOutput(res)
 
 	log.Reset()
-	log.SetVerbose("mainVerboseFunc")
-	mainVerboseFunc()
-	diff(t, res, `2026/09/01 17:23:17 I'm only shown when mainVerboseFunc is on
+	log.SetVerbose("mainIsFuncVerbose")
+	mainIsFuncVerbose()
+	diff(t, res, `2026/09/01 18:41:14 I'm only shown when mainVerboseFunc is on
+2026/09/01 18:41:14 Me too!
 `)
 }

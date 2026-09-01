@@ -75,10 +75,11 @@ func mainScoped() {
 	fn()
 }
 
-func mainVerboseFunc() {
-	if log.VerboseFunc() {
+func mainIsFuncVerbose() {
+	if log.IsFuncVerbose() {
 		log.Printf("I'm only shown when mainVerboseFunc is on")
 	}
+	log.FuncPrintf("Me too!")
 }
 
 var REG_TS = `\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} `

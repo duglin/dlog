@@ -334,14 +334,26 @@ func (log *DLogger) HasVerbose(s string) bool {
 	return log.currentUF.triggers[s] != nil
 }
 
-func (log *DLogger) VerboseFunc() bool {
+var pc2fn = map[uintptr]string{}
+
+func (log *DLogger) isFuncVerboseDepth(d int) bool {
 	fnName := ""
-	pc, _, _, _ := runtime.Caller(2)
-	fnName = runtime.FuncForPC(pc).Name()
-	if i := strings.LastIndex(fnName, "."); i >= 0 {
-		fnName = fnName[i+1:]
+
+	pc, _, _, _ := runtime.Caller(d)
+	if fnName, _ = pc2fn[pc]; fnName == "" {
+		// Not seen this PC yet so get its fnName
+		fnName = runtime.FuncForPC(pc).Name()
+		if i := strings.LastIndex(fnName, "."); i >= 0 {
+			fnName = fnName[i+1:]
+		}
+		pc2fn[pc] = fnName
 	}
+
 	return log.currentUF.triggers[fnName] != nil
+}
+
+func (log *DLogger) IsFuncVerbose() bool {
+	return log.isFuncVerboseDepth(3)
 }
 
 // pre,post indent string
@@ -455,6 +467,29 @@ func (l *DLogger) VPrintln(k any, a ...any) func() {
 		fmt.Sprintln(a...))
 }
 
+func (l *DLogger) FuncVPrint(k any, a ...any) func() {
+	if !l.isFuncVerboseDepth(4) {
+		return nil
+	}
+	return l.print(l.currentUF.showAllPrints || l.checkVTrigger(k), k,
+		JoinArgs(a...))
+}
+
+func (l *DLogger) FuncVPrintf(k any, f string, a ...any) func() {
+	if !l.isFuncVerboseDepth(4) {
+		return nil
+	}
+	return l.print(l.currentUF.showAllPrints || l.checkVTrigger(k), k, f, a...)
+}
+
+func (l *DLogger) FuncVPrintln(k any, a ...any) func() {
+	if !l.isFuncVerboseDepth(4) {
+		return nil
+	}
+	return l.print(l.currentUF.showAllPrints || l.checkVTrigger(k), k,
+		fmt.Sprintln(a...))
+}
+
 func (l *DLogger) VTracef(key any, f string, args ...any) func() {
 	return VTrace(key, append([]any{f}, args...)...)
 }
@@ -515,9 +550,12 @@ func (l *DLogger) Tracef(f string, args ...any) func() {
 	}
 	fnName := ""
 	pc, _, _, _ := runtime.Caller(2)
-	fnName = runtime.FuncForPC(pc).Name()
-	if i := strings.LastIndex(fnName, "."); i >= 0 {
-		fnName = fnName[i+1:]
+	if fnName, _ = pc2fn[pc]; fnName == "" {
+		fnName = runtime.FuncForPC(pc).Name()
+		if i := strings.LastIndex(fnName, "."); i >= 0 {
+			fnName = fnName[i+1:]
+		}
+		pc2fn[pc] = fnName
 	}
 	return VTrace(fnName, append([]any{f}, args...)...)
 }
@@ -528,9 +566,12 @@ func (l *DLogger) Trace(args ...any) func() {
 	}
 	fnName := ""
 	pc, _, _, _ := runtime.Caller(2)
-	fnName = runtime.FuncForPC(pc).Name()
-	if i := strings.LastIndex(fnName, "."); i >= 0 {
-		fnName = fnName[i+1:]
+	if fnName, _ = pc2fn[pc]; fnName == "" {
+		fnName = runtime.FuncForPC(pc).Name()
+		if i := strings.LastIndex(fnName, "."); i >= 0 {
+			fnName = fnName[i+1:]
+		}
+		pc2fn[pc] = fnName
 	}
 	return VTrace(fnName, args...)
 }
@@ -547,6 +588,9 @@ func (l *DLogger) Prefix() string                 { return l.log.Prefix() }
 func (l *DLogger) Print(a ...any)                 { l.VPrint(0, a...) }
 func (l *DLogger) Printf(f string, a ...any)      { l.VPrintf(0, f, a...) }
 func (l *DLogger) Println(a ...any)               { l.VPrintln(0, a...) }
+func (l *DLogger) FuncPrint(a ...any)             { l.FuncVPrint(0, a...) }
+func (l *DLogger) FuncPrintf(f string, a ...any)  { l.FuncVPrintf(0, f, a...) }
+func (l *DLogger) FuncPrintln(a ...any)           { l.FuncVPrintln(0, a...) }
 func (l *DLogger) SetFlags(flag int)              { l.log.SetFlags(flag) }
 func (l *DLogger) SetOutput(w io.Writer)          { l.log.SetOutput(w) }
 func (l *DLogger) SetPrefix(prefix string)        { l.log.SetPrefix(prefix) }
@@ -558,7 +602,7 @@ func GetVerbose() int          { return std.GetVerbose() }
 func SetVerbose(k ...any)      { std.SetVerbose(k...) }
 func DelVerbose(k ...any)      { std.DelVerbose(k...) }
 func HasVerbose(k string) bool { return std.HasVerbose(k) }
-func VerboseFunc() bool        { return std.VerboseFunc() }
+func IsFuncVerbose() bool      { return std.IsFuncVerbose() }
 func SetIndent(v bool)         { std.SetIndent(v) }
 func String() string           { return std.String() }
 func Dump() string             { return std.Dump() }
@@ -583,6 +627,9 @@ func Prefix() string                 { return std.Prefix() }
 func Print(a ...any)                 { std.Print(a...) }
 func Printf(f string, a ...any)      { std.Printf(f, a...) }
 func Println(a ...any)               { std.Println(a...) }
+func FuncPrint(a ...any)             { std.FuncPrint(a...) }
+func FuncPrintf(f string, a ...any)  { std.FuncPrintf(f, a...) }
+func FuncPrintln(a ...any)           { std.FuncPrintln(a...) }
 func SetFlags(flag int)              { std.SetFlags(flag) }
 func SetOutput(w io.Writer)          { std.SetOutput(w) }
 func SetPrefix(prefix string)        { std.SetPrefix(prefix) }
