@@ -334,6 +334,16 @@ func (log *DLogger) HasVerbose(s string) bool {
 	return log.currentUF.triggers[s] != nil
 }
 
+func (log *DLogger) VerboseFunc() bool {
+	fnName := ""
+	pc, _, _, _ := runtime.Caller(2)
+	fnName = runtime.FuncForPC(pc).Name()
+	if i := strings.LastIndex(fnName, "."); i >= 0 {
+		fnName = fnName[i+1:]
+	}
+	return log.currentUF.triggers[fnName] != nil
+}
+
 // pre,post indent string
 func (l *DLogger) modScope(grow bool, key string) (string, string) {
 	pre := l.indent
@@ -548,6 +558,7 @@ func GetVerbose() int          { return std.GetVerbose() }
 func SetVerbose(k ...any)      { std.SetVerbose(k...) }
 func DelVerbose(k ...any)      { std.DelVerbose(k...) }
 func HasVerbose(k string) bool { return std.HasVerbose(k) }
+func VerboseFunc() bool        { return std.VerboseFunc() }
 func SetIndent(v bool)         { std.SetIndent(v) }
 func String() string           { return std.String() }
 func Dump() string             { return std.Dump() }

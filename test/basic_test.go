@@ -729,3 +729,14 @@ TS └ rr
 `)
 
 }
+
+func TestVerboseFunc(t *testing.T) {
+	res := &strings.Builder{}
+	golog.SetOutput(res)
+
+	log.Reset()
+	log.SetVerbose("mainVerboseFunc")
+	mainVerboseFunc()
+	diff(t, res, `2026/09/01 17:23:17 I'm only shown when mainVerboseFunc is on
+`)
+}

@@ -75,6 +75,12 @@ func mainScoped() {
 	fn()
 }
 
+func mainVerboseFunc() {
+	if log.VerboseFunc() {
+		log.Printf("I'm only shown when mainVerboseFunc is on")
+	}
+}
+
 var REG_TS = `\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} `
 var TIME_TS = `time: \d+\.\d+.?s`
 
