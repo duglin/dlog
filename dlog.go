@@ -406,51 +406,10 @@ func (l *DLogger) checkVTrigger(key any) bool {
 }
 
 func (l *DLogger) print(doit bool, k any, f string, a ...any) func() {
-	prefix := ""
-	retFunc := func() {}
-
-	/*
-		key, ok := k.(string)
-		if !ok {
-			key = fmt.Sprintf("%v", k)
-		}
-
-		ENTER := l.Top() + " " // "+ " // "+ " // ENTER := "Enter: "
-		EXIT :=  l.Bot() + " " // "+ "  // "+ "  // "└─ " // EXIT := "Exit: "
-
-			if len(f) > 0 && f[0] == '>' {
-				if doit {
-					prefix, _ = l.modScope(true, key)
-					prefix = prefix + ENTER
-					f = f[1:]
-					startTime := time.Now()
-					doTime := l.currentUF.showTime
-
-					retFunc = func() {
-						_, indent := l.modScope(false, "")
-						suffix := ""
-						if doTime {
-							suffix = fmt.Sprintf(" time: %v", time.Since(startTime))
-						}
-						l.log.Printf(indent+EXIT+f+suffix, a...)
-					}
-				}
-			} else if len(f) > 0 && f[0] == '<' {
-				if doit {
-					_, prefix = l.modScope(false, key)
-					prefix = prefix + EXIT
-				}
-				f = f[1:]
-			} else {
-	*/
-	prefix = l.indent
-	// }
-
 	if doit {
-		l.log.Printf(prefix+f, a...)
+		l.log.Printf(l.indent+f, a...)
 	}
-
-	return retFunc
+	return func() {}
 }
 
 func (l *DLogger) VPrint(k any, a ...any) func() {
@@ -468,23 +427,23 @@ func (l *DLogger) VPrintln(k any, a ...any) func() {
 }
 
 func (l *DLogger) FuncVPrint(k any, a ...any) func() {
-	if !l.isFuncVerboseDepth(4) {
-		return nil
+	if !l.currentUF.showAllPrints && !l.isFuncVerboseDepth(4) {
+		return func() {}
 	}
 	return l.print(l.currentUF.showAllPrints || l.checkVTrigger(k), k,
 		JoinArgs(a...))
 }
 
 func (l *DLogger) FuncVPrintf(k any, f string, a ...any) func() {
-	if !l.isFuncVerboseDepth(4) {
-		return nil
+	if !l.currentUF.showAllPrints && !l.isFuncVerboseDepth(4) {
+		return func() {}
 	}
 	return l.print(l.currentUF.showAllPrints || l.checkVTrigger(k), k, f, a...)
 }
 
 func (l *DLogger) FuncVPrintln(k any, a ...any) func() {
-	if !l.isFuncVerboseDepth(4) {
-		return nil
+	if !l.currentUF.showAllPrints && !l.isFuncVerboseDepth(4) {
+		return func() {}
 	}
 	return l.print(l.currentUF.showAllPrints || l.checkVTrigger(k), k,
 		fmt.Sprintln(a...))
