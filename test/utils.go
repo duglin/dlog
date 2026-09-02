@@ -83,7 +83,7 @@ func mainIsFuncVerbose() {
 }
 
 var REG_TS = `\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} `
-var TIME_TS = `time: \d+\.\d+.?s`
+var TIME_TS = `time: \d+(\.\d+)?.?s`
 
 func diff(t *testing.T, got *strings.Builder, exp string) {
 	t.Helper()

@@ -353,6 +353,14 @@ func (log *DLogger) isFuncVerboseDepth(d int) bool {
 }
 
 func (log *DLogger) IsFuncVerbose() bool {
+	if log.currentUF.showAllPrints {
+		return true
+	}
+
+	if len(log.currentUF.triggers) == 0 {
+		return false
+	}
+
 	return log.isFuncVerboseDepth(3)
 }
 
@@ -402,51 +410,69 @@ func (l *DLogger) checkVTrigger(key any) bool {
 	} else if key != nil {
 		return true
 	}
+
 	panic("Verbose trigger can only be called with string or int")
 }
 
-func (l *DLogger) print(doit bool, k any, f string, a ...any) func() {
-	if doit {
+func (l *DLogger) VPrint(k any, a ...any) func() {
+	if l.currentUF.showAllPrints || l.checkVTrigger(k) {
+		l.log.Printf(l.indent + JoinArgs(a...))
+	}
+	return func() {}
+}
+
+func (l *DLogger) VPrintf(k any, f string, a ...any) func() {
+	if l.currentUF.showAllPrints || l.checkVTrigger(k) {
 		l.log.Printf(l.indent+f, a...)
 	}
 	return func() {}
 }
 
-func (l *DLogger) VPrint(k any, a ...any) func() {
-	return l.print(l.currentUF.showAllPrints || l.checkVTrigger(k), k,
-		JoinArgs(a...))
-}
-
-func (l *DLogger) VPrintf(k any, f string, a ...any) func() {
-	return l.print(l.currentUF.showAllPrints || l.checkVTrigger(k), k, f, a...)
-}
-
 func (l *DLogger) VPrintln(k any, a ...any) func() {
-	return l.print(l.currentUF.showAllPrints || l.checkVTrigger(k), k,
-		fmt.Sprintln(a...))
+	if l.currentUF.showAllPrints || l.checkVTrigger(k) {
+		l.log.Printf(l.indent + fmt.Sprintln(a...))
+	}
+	return func() {}
+
 }
 
-func (l *DLogger) FuncVPrint(k any, a ...any) func() {
-	if !l.currentUF.showAllPrints && !l.isFuncVerboseDepth(4) {
+func (l *DLogger) FuncPrint(a ...any) func() {
+	if !l.currentUF.showAllPrints && len(l.currentUF.triggers) == 0 {
 		return func() {}
 	}
-	return l.print(l.currentUF.showAllPrints || l.checkVTrigger(k), k,
-		JoinArgs(a...))
+
+	if !l.isFuncVerboseDepth(3) {
+		return func() {}
+	}
+
+	l.log.Printf(l.indent + JoinArgs(a...))
+	return func() {}
 }
 
-func (l *DLogger) FuncVPrintf(k any, f string, a ...any) func() {
-	if !l.currentUF.showAllPrints && !l.isFuncVerboseDepth(4) {
+func (l *DLogger) FuncPrintf(f string, a ...any) func() {
+	if !l.currentUF.showAllPrints && len(l.currentUF.triggers) == 0 {
 		return func() {}
 	}
-	return l.print(l.currentUF.showAllPrints || l.checkVTrigger(k), k, f, a...)
+
+	if !l.isFuncVerboseDepth(3) {
+		return func() {}
+	}
+
+	l.log.Printf(l.indent+f, a...)
+	return func() {}
 }
 
-func (l *DLogger) FuncVPrintln(k any, a ...any) func() {
-	if !l.currentUF.showAllPrints && !l.isFuncVerboseDepth(4) {
+func (l *DLogger) FuncPrintln(a ...any) func() {
+	if !l.currentUF.showAllPrints && len(l.currentUF.triggers) == 0 {
 		return func() {}
 	}
-	return l.print(l.currentUF.showAllPrints || l.checkVTrigger(k), k,
-		fmt.Sprintln(a...))
+
+	if !l.isFuncVerboseDepth(3) {
+		return func() {}
+	}
+
+	l.log.Printf(l.indent + fmt.Sprintln(a...))
+	return func() {}
 }
 
 func (l *DLogger) VTracef(key any, f string, args ...any) func() {
@@ -507,6 +533,7 @@ func (l *DLogger) Tracef(f string, args ...any) func() {
 	if !l.currentUF.showAllTraces && len(l.currentUF.triggers) == 0 {
 		return func() {}
 	}
+
 	fnName := ""
 	pc, _, _, _ := runtime.Caller(2)
 	if fnName, _ = pc2fn[pc]; fnName == "" {
@@ -523,6 +550,7 @@ func (l *DLogger) Trace(args ...any) func() {
 	if !l.currentUF.showAllTraces && len(l.currentUF.triggers) == 0 {
 		return func() {}
 	}
+
 	fnName := ""
 	pc, _, _, _ := runtime.Caller(2)
 	if fnName, _ = pc2fn[pc]; fnName == "" {
@@ -532,6 +560,7 @@ func (l *DLogger) Trace(args ...any) func() {
 		}
 		pc2fn[pc] = fnName
 	}
+
 	return VTrace(fnName, args...)
 }
 
@@ -547,9 +576,6 @@ func (l *DLogger) Prefix() string                 { return l.log.Prefix() }
 func (l *DLogger) Print(a ...any)                 { l.VPrint(0, a...) }
 func (l *DLogger) Printf(f string, a ...any)      { l.VPrintf(0, f, a...) }
 func (l *DLogger) Println(a ...any)               { l.VPrintln(0, a...) }
-func (l *DLogger) FuncPrint(a ...any)             { l.FuncVPrint(0, a...) }
-func (l *DLogger) FuncPrintf(f string, a ...any)  { l.FuncVPrintf(0, f, a...) }
-func (l *DLogger) FuncPrintln(a ...any)           { l.FuncVPrintln(0, a...) }
 func (l *DLogger) SetFlags(flag int)              { l.log.SetFlags(flag) }
 func (l *DLogger) SetOutput(w io.Writer)          { l.log.SetOutput(w) }
 func (l *DLogger) SetPrefix(prefix string)        { l.log.SetPrefix(prefix) }
