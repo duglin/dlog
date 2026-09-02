@@ -330,12 +330,14 @@ func (log *DLogger) DelVerbose(triggers ...any) {
 	}
 }
 
+// is "s" enabled as a verbose keyword?
 func (log *DLogger) HasVerbose(s string) bool {
 	return log.currentUF.triggers[s] != nil
 }
 
 var pc2fn = map[uintptr]string{}
 
+// Is this function's name in the list of verbose keywords?
 func (log *DLogger) isFuncVerboseDepth(d int) bool {
 	fnName := ""
 
@@ -352,6 +354,7 @@ func (log *DLogger) isFuncVerboseDepth(d int) bool {
 	return log.currentUF.triggers[fnName] != nil
 }
 
+// Is this function's name in the list of verbose keywords?
 func (log *DLogger) IsFuncVerbose() bool {
 	if log.currentUF.showAllPrints {
 		return true
@@ -362,6 +365,11 @@ func (log *DLogger) IsFuncVerbose() bool {
 	}
 
 	return log.isFuncVerboseDepth(3)
+}
+
+// Is ANY keyword verbose trigger set?
+func (log *DLogger) IsVerbose() bool {
+	return len(log.currentUF.triggers) > 0
 }
 
 // pre,post indent string
@@ -588,6 +596,7 @@ func SetVerbose(k ...any)      { std.SetVerbose(k...) }
 func DelVerbose(k ...any)      { std.DelVerbose(k...) }
 func HasVerbose(k string) bool { return std.HasVerbose(k) }
 func IsFuncVerbose() bool      { return std.IsFuncVerbose() }
+func IsVerbose() bool          { return std.IsVerbose() }
 func SetIndent(v bool)         { std.SetIndent(v) }
 func String() string           { return std.String() }
 func Dump() string             { return std.Dump() }
